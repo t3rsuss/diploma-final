@@ -16,7 +16,7 @@ ROOT = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 from src.structure.predict import predict_blocks, table_labels
 from src.detector.verdict import score_file, level
-from src.detector.rules import apply_rules
+from src.detector.rules import apply_rules, elf_machine
 
 try:
     lief.logging.disable()
@@ -78,8 +78,8 @@ st.sidebar.caption(
     "Режим діє для файлів, які оцінює власна модель (PE x64 та ELF).")
 st.sidebar.caption(
     "Для ELF додатково діють структурні правила: якщо таблицю секцій прочитати "
-    "не вдалося або розмітка за вмістом з нею майже не збігається, рівень "
-    "«Ймовірно безпечний» підвищується до «Підозрілий».")
+    "не вдалося (для всіх архітектур) або розмітка за вмістом майже не збігається "
+    "з нею (для x86 і x86-64), рівень «Ймовірно безпечний» підвищується до «Підозрілий».")
 
 up = st.file_uploader("Завантажте файл PE (.exe, .dll) або ELF")
 
@@ -113,7 +113,8 @@ if up is not None:
                     mode_note = (" Режим чутливості на цей файл не впливає: його оцінює готова "
                                  "модель EMBER2024 з фіксованими порогами.")
             lvl = level(res)
-            lvl, reasons, raised = apply_rules(lvl, res["kind"], pred, truth)
+            machine = elf_machine(path) if res["kind"] == "ELF" else None
+            lvl, reasons, raised = apply_rules(lvl, res["kind"], pred, truth, machine)
 
             c1, c2, c3 = st.columns(3)
             c1.metric("Оцінка моделі", f"{res['score'] * 100:.1f} %")

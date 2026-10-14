@@ -1,20 +1,26 @@
+import struct
+
 AGREE_MIN = 0.6
+X86_FAMILY = {3, 62}
 
 
-def apply_rules(lvl, kind, pred, truth):
-    """Структурні правила підвищення рівня для ELF.
+def elf_machine(path):
+    with open(path, "rb") as f:
+        h = f.read(20)
+    if len(h) < 20 or h[:4] != b"\x7fELF":
+        return None
+    fmt = "<H" if h[5] == 1 else ">H"
+    return struct.unpack(fmt, h[18:20])[0]
 
-    R1: таблицю секцій прочитати не вдалося.
-    R2: розмітка моделі збігається з таблицею секцій менш ніж на AGREE_MIN.
-    Повертає (рівень, причини, чи_підвищено).
-    """
+
+def apply_rules(lvl, kind, pred, truth, machine=None):
     if kind != "ELF" or pred is None:
         return lvl, [], False
 
     reasons = []
     if truth is None:
         reasons.append("ELF без читаної таблиці секцій")
-    else:
+    elif machine in X86_FAMILY:
         agree = float((pred == truth).mean())
         if agree < AGREE_MIN:
             reasons.append(
