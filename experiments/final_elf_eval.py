@@ -9,7 +9,7 @@ CLEAN_MAP = {"armel": "ARM", "armhf": "ARM", "arm64": "AArch64", "i386": "x86",
 VARS = [("стандартний", "std"), ("стандартний + правила", "std_rule"),
         ("підвищений", "elev"), ("підвищений + правила", "elev_rule"),
         ("максимальний", "max"), ("максимальний + правила", "max_rule")]
-COLS = ["score", "level", "agree", "arch"]
+COLS = ["sha256", "score", "level", "agree", "arch"]
 
 
 def wilson(k, n, z=1.96):
@@ -35,11 +35,13 @@ def finish(d):
 
 own = pd.read_csv(R / "own_detector_clean.csv")
 own = own[own["kind"] == "ELF"].merge(
-    pd.read_csv(R / "struct_clean_elf.csv")[["file", "agree"]], on="file", how="left")
+    pd.read_csv(R / "struct_clean_elf.csv")[["file", "sha256", "agree"]],
+    on="file", how="left")
 own["arch"] = "x86-64"
 
 ex = pd.read_csv(R / "extra_scores.csv").merge(
-    pd.read_csv(R / "struct_extra.csv")[["file", "agree"]], on="file", how="left")
+    pd.read_csv(R / "struct_extra.csv")[["file", "sha256", "agree"]],
+    on=["file", "sha256"], how="left")
 ex["arch"] = "x86-64"
 
 parts = [own[COLS], ex[COLS]]
@@ -49,7 +51,12 @@ for a, name in CLEAN_MAP.items():
         on=["file", "sha256"], how="left")
     d["arch"] = name
     parts.append(d[COLS])
-clean = finish(pd.concat(parts, ignore_index=True))
+
+raw = pd.concat(parts, ignore_index=True)
+dup = raw["sha256"].notna() & raw["sha256"].duplicated()
+print(f"чистих ELF до видалення дублів: {len(raw)}, дублів: {int(dup.sum())}, "
+      f"після: {int((~dup).sum())}")
+clean = finish(raw[~dup])
 
 mal = pd.read_csv(R / "mal_elf_scores.csv").merge(
     pd.read_csv(R / "struct_mal_elf.csv")[["sha256", "agree"]], on="sha256", how="left")
@@ -79,5 +86,5 @@ block("Усі ELF", mal, clean)
 
 print("\nПропущені шкідливі (підвищений + правила):")
 print(mal[~mal["elev_rule"]][["score", "level", "agree", "arch"]].to_string())
-print("\nХибні тривоги (максимальний):")
-print(clean[clean["max"]][["score", "level", "agree", "arch"]].to_string())
+print("\nХибні тривоги (підвищений):")
+print(clean[clean["elev"]][["score", "level", "agree", "arch"]].to_string())

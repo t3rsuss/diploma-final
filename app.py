@@ -23,6 +23,7 @@ try:
 except Exception:
     pass
 
+MAX_BYTES = 30_000_000
 COLORS = ["#7f7f7f", "#d62728", "#1f77b4", "#ff7f0e", "#2ca02c", "#9467bd"]
 UA = ["заголовок", "код", "дані тільки для читання", "дані", "ресурси", "інше"]
 LABELS = {"high": "Шкідливий", "mid": "Підозрілий", "low": "Ймовірно безпечний"}
@@ -32,8 +33,8 @@ MODE_T = {"Підвищений": (0.5, 0.9), "Максимальний": (0.2, 
 MODE_STATS = {
     ("win64", "Підвищений"): "на власному наборі: знайдено 88,9 % шкідливих, хибних тривог 0,16 %",
     ("win64", "Максимальний"): "на власному наборі: знайдено 92,6 % шкідливих, хибних тривог 0,16 %",
-    ("elf", "Підвищений"): "на власному наборі ELF (64 шкідливі, 1 890 чистих, разом із структурними правилами): знайдено 95,3 % шкідливих, хибних тривог 0,3 %",
-    ("elf", "Максимальний"): "на власному наборі ELF (64 шкідливі, 1 890 чистих, разом із структурними правилами): знайдено 95,3 % шкідливих, хибних тривог 1,0 %",
+    ("elf", "Підвищений"): "на власному наборі ELF (64 шкідливі, 1 881 чистих, разом із структурними правилами): знайдено 95,3 % шкідливих, хибних тривог 0,3 %",
+    ("elf", "Максимальний"): "на власному наборі ELF (64 шкідливі, 1 881 чистих, разом із структурними правилами): знайдено 95,3 % шкідливих, хибних тривог 1,0 %",
 }
 
 
@@ -50,6 +51,12 @@ def strip(labels, width=128):
     ax.axis("off")
     fig.tight_layout()
     return fig
+
+
+def show_strip(labels):
+    fig = strip(labels)
+    st.pyplot(fig)
+    plt.close(fig)
 
 
 def sections_table(path):
@@ -83,24 +90,42 @@ st.sidebar.caption(
 
 up = st.file_uploader("Завантажте файл PE (.exe, .dll) або ELF")
 
+if up is not None and up.size > MAX_BYTES:
+    st.error(f"Файл більший за {MAX_BYTES // 1_000_000} МБ. Такі файли не входили "
+             "в оцінювання, тому аналіз для них вимкнено.")
+    up = None
+
 if up is not None:
     with tempfile.NamedTemporaryFile(delete=False) as t:
         t.write(up.getbuffer())
         path = t.name
     try:
-        with st.spinner("Розмітка структури файла"):
-            out = predict_blocks(path)
+        out = None
+        try:
+            with st.spinner("Розмітка структури файла"):
+                out = predict_blocks(path)
+        except Exception as e:
+            st.warning(f"Розмітку структури виконати не вдалося: {e}")
         pred = truth = fmt = ent = None
         n = 0
         if out is not None:
             pred, ent, n = out
-            fmt, truth = table_labels(path, n)
+            try:
+                fmt, truth = table_labels(path, n)
+            except Exception:
+                fmt, truth = None, None
 
         st.header("Вердикт")
-        with st.spinner("Обчислення ознак і оцінка моделлю"):
-            res = score_file(path)
+        res, failed = None, False
+        try:
+            with st.spinner("Обчислення ознак і оцінка моделлю"):
+                res = score_file(path)
+        except Exception as e:
+            failed = True
+            st.error(f"Не вдалося обчислити вердикт: {e}")
         if res is None:
-            st.warning("Формат не підтримується: потрібні файли PE або ELF")
+            if not failed:
+                st.warning("Формат не підтримується: потрібні файли PE або ELF")
         else:
             own = res["key"] in ("win64", "elf")
             mode_note = ""
@@ -164,11 +189,11 @@ if up is not None:
             c3.metric("Формат", fmt or "не розпізнано")
 
             st.subheader("Розмітка за моделлю")
-            st.pyplot(strip(pred))
+            show_strip(pred)
 
             if truth is not None:
                 st.subheader("Розмітка за таблицею секцій")
-                st.pyplot(strip(truth))
+                show_strip(truth)
                 st.metric("Збіг моделі з таблицею секцій",
                           f"{(pred == truth).mean() * 100:.1f} %")
             else:
@@ -186,9 +211,15 @@ if up is not None:
             st.subheader("Ентропія вздовж файла")
             st.line_chart(pd.DataFrame({"ентропія": ent}))
 
-            tbl = sections_table(path)
+            try:
+                tbl = sections_table(path)
+            except Exception:
+                tbl = None
             if tbl is not None and len(tbl):
                 st.subheader("Секції за заголовком")
                 st.dataframe(tbl, hide_index=True)
     finally:
-        os.unlink(path)
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
