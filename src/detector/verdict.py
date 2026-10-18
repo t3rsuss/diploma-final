@@ -1,6 +1,5 @@
 import sys
 import json
-import struct
 import pathlib
 
 import numpy as np
