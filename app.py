@@ -23,7 +23,7 @@ try:
 except Exception:
     pass
 
-MAX_BYTES = 30_000_000
+MAX_BYTES = 200_000_000
 COLORS = ["#7f7f7f", "#d62728", "#1f77b4", "#ff7f0e", "#2ca02c", "#9467bd"]
 UA = ["заголовок", "код", "дані тільки для читання", "дані", "ресурси", "інше"]
 LABELS = {"high": "Шкідливий", "mid": "Підозрілий", "low": "Ймовірно безпечний"}
@@ -94,6 +94,9 @@ if up is not None and up.size > MAX_BYTES:
     st.error(f"Файл більший за {MAX_BYTES // 1_000_000} МБ. Такі файли не входили "
              "в оцінювання, тому аналіз для них вимкнено.")
     up = None
+
+if up is not None and up.size > 30_000_000:
+    st.warning("Файл більший за 30 МБ: такі файли не входили в оцінювання, а структуру розмічено лише за першими 20 МБ. Вердикт слід вважати орієнтовним.")
 
 if up is not None:
     with tempfile.NamedTemporaryFile(delete=False) as t:
